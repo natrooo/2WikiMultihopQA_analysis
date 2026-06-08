@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2WikiMultihopQA 多跳知识图谱系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { 
+            background-color: #f0f2f5; 
+            color: #333; 
+            /* 禁止页面横向溢出，解决页面拉不到底问题 */
+            overflow-x: hidden;
+        }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 20px 40px; 
+            text-align: center; 
+        }
+        .header h1 { font-size: 28px; margin-bottom: 5px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .nav { 
+            background: white; 
+            padding: 0 40px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+            display: flex; 
+        }
+        .nav button { 
+            padding: 14px 24px; 
+            border: none; 
+            background: none; 
+            cursor: pointer; 
+            font-size: 15px; 
+            border-bottom: 3px solid transparent; 
+            transition: all 0.2s; 
+            color: #666; 
+        }
+        .nav button:hover { color: #667eea; }
+        .nav button.active { 
+            color: #667eea; 
+            border-bottom-color: #667eea; 
+            font-weight: 600; 
+        }
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            padding: 20px 40px;
+        }
+        .tab { display: none; }
+        .tab.active { display: block; }
+        .card { 
+            background: white; 
+            border-radius: 10px; 
+            padding: 24px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); 
+        }
+        .card h3 { margin-bottom: 16px; color: #333; font-size: 18px; }
+        .stats-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 16px; 
+            margin-bottom: 20px; 
+        }
+        .stat-card { 
+            background: white; 
+            border-radius: 10px; 
+            padding: 20px; 
+            text-align: center; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); 
+        }
+        .stat-card .number { font-size: 36px; font-weight: 700; color: #667eea; }
+        .stat-card .label { color: #888; font-size: 14px; margin-top: 4px; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
+        .search-box input { 
+            flex: 1; padding: 12px 16px; 
+            border: 2px solid #e0e0e0; border-radius: 8px; 
+            font-size: 15px; outline: none; 
+            transition: border-color 0.2s; 
+        }
+        .search-box input:focus { border-color: #667eea; }
+        .search-box button { 
+            padding: 12px 24px; background: #667eea; 
+            color: white; border: none; border-radius: 8px; 
+            cursor: pointer; font-size: 15px; font-weight: 600; 
+            transition: background 0.2s; 
+        }
+        .search-box button:hover { background: #5a6fd6; }
+        .filter-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+        .filter-row select { 
+            padding: 8px 16px; border: 1px solid #ddd; 
+            border-radius: 6px; font-size: 14px; background: white; 
+        }
+        .result-item { 
+            background: #f8f9fa; border-radius: 8px; 
+            padding: 16px; margin-bottom: 12px; 
+            border-left: 4px solid #667eea; transition: transform 0.1s; 
+        }
+        .result-item:hover { transform: translateX(4px); }
+        .result-item .q { font-weight: 600; margin-bottom: 8px; font-size: 15px; }
+        .result-item .meta { 
+            display: flex; gap: 16px; margin-bottom: 8px; 
+            font-size: 13px; color: #888; flex-wrap: wrap; 
+        }
+        .result-item .meta span { 
+            background: #e8e8e8; padding: 2px 10px; border-radius: 12px; 
+        }
+        .result-item .content { 
+            padding: 10px; background: white; border-radius: 6px; 
+            font-size: 13px; margin-top: 8px; line-height: 1.6; 
+        }
+        /* 知识图谱容器：固定宽高，防止溢出 */
+        .canvas-wrap { 
+            position: relative; width: 100%; height: 480px; 
+            border: 1px solid #eee; border-radius: 8px; 
+            margin-top: 10px; overflow: hidden; 
+        }
+        canvas { width: 100% !important; height: 100% !important; display: block; }
+        .tooltip-box { 
+            position: absolute; background: rgba(0,0,0,0.85); color: white; 
+            padding: 8px 12px; border-radius: 6px; font-size: 12px; 
+            pointer-events: none; max-width: 300px; display: none; z-index: 999; 
+        }
+        #pagination { 
+            display: flex; gap: 8px; justify-content: center; 
+            margin-top: 20px; flex-wrap: wrap; 
+        }
+        #pagination button { 
+            padding: 8px 14px; border: 1px solid #ddd; 
+            background: white; border-radius: 6px; cursor: pointer; 
+        }
+        #pagination button:hover { background: #f0f0f0; }
+        #pagination button.active { 
+            background: #667eea; color: white; border-color: #667eea; 
+        }
+        /* 图表布局：两列自适应，限制高度，彻底解决溢出 */
+        .chart-row { 
+            display: grid; grid-template-columns: 1fr 1fr; 
+            gap: 20px; margin-bottom: 20px; 
+        }
+        @media (max-width: 768px) { 
+            .chart-row { grid-template-columns: 1fr; } 
+        }
+        /* 图表容器固定高度，禁止无限拉长 */
+        .chart-container { 
+            width: 100%; height: 360px; 
+            position: relative; overflow: hidden;
+        }
+        .cluster-card-list { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
+            gap: 16px; margin-top: 15px; 
+        }
+        .cluster-card { 
+            padding: 15px; border-radius: 8px; background: #f8f9fa; 
+            border-left: 4px solid #667eea; 
+        }
+        .cluster-card h4 { margin-bottom: 8px; color: #333; }
+        .cluster-card p { font-size: 13px; color: #666; line-height: 1.5; }
+        .footer { 
+            text-align: center; padding: 20px; color: #888; 
+            font-size: 13px; margin-top: 20px; 
+        }
+        .loading { text-align: center; padding: 20px; color: #667eea; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>2WikiMultihopQA 多跳知识图谱检索系统</h1>
+    <p>基于全量2WikiMultihopQA数据集 | 支持多跳查询、实体检索、聚类分析</p>
+</div>
+
+<div class="nav">
+    <button class="active" onclick="switchTab('retrieval', event)">检索查询</button>
+    <button onclick="switchTab('cluster', event)">聚类可视化</button>
+    <button onclick="switchTab('stats', event)">数据统计</button>
+    <button onclick="switchTab('about', event)">系统说明</button>
+</div>
+
+<div class="container">
+    <!-- 检索查询标签 -->
+    <div id="tab-retrieval" class="tab active">
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <div class="card">
+            <h3>🔗 多跳链路查询</h3>
+            <div class="search-box">
+                <input type="text" id="multihopInput" placeholder="输入起始实体，如：United States / China / London">
+                <button onclick="runMultihop()">执行多跳查询</button>
+            </div>
+            <div id="multihopResult"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔍 实体关键词检索（支持分页）</h3>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="输入关键词，如：country / city / president">
+                <button onclick="runSearch()">检索实体</button>
+            </div>
+            <div class="filter-row">
+                <span id="searchCount" style="line-height: 36px; color: #888; font-size: 14px;"></span>
+            </div>
+            <div id="searchResultList"></div>
+            <div id="pagination"></div>
+        </div>
+    </div>
+
+    <!-- 聚类可视化标签 -->
+    <div id="tab-cluster" class="tab">
+        <div class="card">
+            <h3>📊 实体自动聚类（基于语义领域）</h3>
+            <p style="color:#888;font-size:13px;margin-bottom:12px;">基于实体关键词自动分类：地理/科技/人物/艺术/其他领域</p>
+            <button class="btn" style="margin-bottom:15px;padding:8px 20px;" onclick="runCluster()">执行聚类分析</button>
+            <div class="cluster-card-list" id="clusterResult"></div>
+        </div>
+
+        <div class="card">
+            <h3>🌐 知识图谱可视化（前200个实体）</h3>
+            <p style="color:#888;font-size:13px;margin-bottom:12px;">仅加载前200个实体避免渲染卡顿，鼠标悬浮查看名称</p>
+            <div class="canvas-wrap">
+                <div id="graphChart" style="width:100%;height:100%;"></div>
+                <div class="tooltip-box" id="graphTooltip"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据统计标签 -->
+    <div id="tab-stats" class="tab">
+        <div class="chart-row">
+            <div class="card">
+                <h3>实体领域分布</h3>
+                <div class="chart-container">
+                    <canvas id="chartField"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>各聚类实体数量分布</h3>
+                <div class="chart-container">
+                    <canvas id="chartClusterNum"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>多跳链路长度分布</h3>
+            <div class="chart-container">
+                <canvas id="chartLinkLen"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系统说明标签 -->
+    <div id="tab-about" class="tab">
+        <div class="card">
+            <h3>系统简介</h3>
+            <p style="line-height:1.8;margin-bottom:12px;">本系统基于 <strong>Flask + Redis</strong> 搭建，使用全量 <strong>2WikiMultihopQA</strong> 数据集，实现多跳推理、实体检索、聚类分析与可视化功能。</p>
+            <ul style="line-height:2;margin-left:20px;">
+                <li><strong>多跳查询：</strong>根据起始实体，递归查询完整的实体关系链路（最大支持10跳）</li>
+                <li><strong>实体检索：</strong>关键词模糊匹配，支持分页加载，快速查找相关实体</li>
+                <li><strong>实体聚类：</strong>基于实体语义自动分类为地理、科技、人物、艺术/文化、其他五大领域</li>
+                <li><strong>图谱可视化：</strong>交互式关系图展示实体与关联关系，优化配置适配大量数据</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="footer">
+    2WikiMultihopQA 多跳知识图谱系统 | 实验项目
+</div>
+
+<script>
+    // 保留你原本的【内网API地址】，未做任何修改
+    const API_BASE = "http://192.168.88.129:5000/api";
+    const PAGE_SIZE = 20;
+    let currentPage = 1;
+    let allEntityList = [];
+    let graphData = { nodes: [], edges: [] };
+    let chartInstances = {};
+    let graphChartInstance = null;
+    let clusterData = {};
+
+    // 切换标签页（修复event报错）
+    function switchTab(tabName, event) {
+        document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.nav button').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+        event.target.classList.add('active');
+
+        if (tabName === 'cluster' && graphData.nodes.length === 0) {
+            initGraphChart();
+        }
+        if (tabName === 'stats' && Object.keys(clusterData).length === 0) {
+            runCluster().then(() => drawStatsCharts());
+        }
+    }
+
+    // 初始化页面
+    async function initPage() {
+        try {
+            const healthRes = await fetch(`${API_BASE}/health`);
+            const healthJson = await healthRes.json();
+            const entityCount = healthJson.entity_count;
+
+            const graphRes = await fetch(`${API_BASE}/graph`);
+            const graphJson = await graphRes.json();
+            // 限制只加载前200个实体，大幅降低渲染压力，解决图谱空白
+            const limitNum = 200;
+            const limitedNodes = graphJson.data.nodes.slice(0, limitNum);
+            const nodeNameSet = new Set(limitedNodes.map(item => item.name));
+            // 过滤边：只保留200个实体内的关联关系
+            const limitedEdges = graphJson.data.edges.filter(edge => {
+                return nodeNameSet.has(edge.source) && nodeNameSet.has(edge.target);
+            });
+
+            graphData = { nodes: limitedNodes, edges: limitedEdges };
+            allEntityList = graphData.nodes.map(item => item.name);
+
+            document.getElementById("statsGrid").innerHTML = `
+                <div class="stat-card"><div class="number">${entityCount.toLocaleString()}</div><div class="label">实体总数</div></div>
+                <div class="stat-card"><div class="number">${graphData.edges.length.toLocaleString()}</div><div class="label">关联关系数（前200个）</div></div>
+                <div class="stat-card"><div class="number">5</div><div class="label">聚类类别数</div></div>
+                <div class="stat-card"><div class="number">4</div><div class="label">功能模块</div></div>
+            `;
+        } catch (err) {
+            alert("后端接口连接失败，请检查服务是否启动！");
+            console.error(err);
+        }
+    }
+
+    // 多跳查询
+    async function runMultihop() {
+        const inputVal = document.getElementById("multihopInput").value.trim();
+        const resultDom = document.getElementById("multihopResult");
+        if (!inputVal) {
+            resultDom.innerHTML = `<div class="result-item"><div class="q">请输入起始实体名称</div></div>`;
+            return;
+        }
+
+        resultDom.innerHTML = `<div class="loading">查询中...</div>`;
+        try {
+            const res = await fetch(`${API_BASE}/multihop?start=${encodeURIComponent(inputVal)}`);
+            const json = await res.json();
+            if (json.code !== 200) {
+                resultDom.innerHTML = `<div class="result-item"><div class="q">查询失败：${json.error}</div></div>`;
+                return;
+            }
+            const pathArr = json.data[0];
+
+            let html = `
+                <div class="result-item">
+                    <div class="q">多跳推理链路：</div>
+                    <div class="meta"><span>链路长度：${pathArr.length}</span></div>
+                    <div class="content">${pathArr.join(" ➜ ")}</div>
+                </div>
+            `;
+            resultDom.innerHTML = html;
+        } catch (err) {
+            resultDom.innerHTML = `<div class="result-item"><div class="q">查询失败，请检查实体名称或后端服务</div></div>`;
+        }
+    }
+
+    // 实体检索
+    async function runSearch() {
+        const keyword = document.getElementById("searchInput").value.trim().toLowerCase();
+        const resultDom = document.getElementById("searchResultList");
+        const countDom = document.getElementById("searchCount");
+        const pageDom = document.getElementById("pagination");
+
+        if (!keyword) {
+            countDom.textContent = "请输入关键词";
+            resultDom.innerHTML = "";
+            pageDom.innerHTML = "";
+            return;
+        }
+
+        resultDom.innerHTML = `<div class="loading">检索中...</div>`;
+        try {
+            const res = await fetch(`${API_BASE}/search?keyword=${encodeURIComponent(keyword)}&page=${currentPage}&page_size=${PAGE_SIZE}`);
+            const json = await res.json();
+            if (json.code !== 200) {
+                resultDom.innerHTML = `<div class="result-item"><div class="q">检索失败：${json.error}</div></div>`;
+                return;
+            }
+            const matchList = json.data;
+            countDom.textContent = `共检索到 ${json.total.toLocaleString()} 个相关实体（当前第${json.page}页）`;
+
+            renderSearchResult(matchList, json.total);
+        } catch (err) {
+            resultDom.innerHTML = `<div class="result-item"><div class="q">检索失败，请检查后端服务</div></div>`;
+        }
+    }
+
+    function renderSearchResult(list, total) {
+        const resultDom = document.getElementById("searchResultList");
+        const pageDom = document.getElementById("pagination");
+        const totalPage = Math.ceil(total / PAGE_SIZE);
+        const startIdx = (currentPage - 1) * PAGE_SIZE;
+        const pageData = list;
+
+        let listHtml = "";
+        pageData.forEach((item, idx) => {
+            listHtml += `
+                <div class="result-item">
+                    <div class="q">${startIdx + idx + 1}. ${escapeHtml(item)}</div>
+                    <div class="meta"><span>实体名称</span></div>
+                </div>
+            `;
+        });
+        resultDom.innerHTML = listHtml || `<div class="result-item"><div class="q">无匹配实体</div></div>`;
+
+        let pageHtml = "";
+        for (let i = 1; i <= totalPage; i++) {
+            pageHtml += `<button class="${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+        }
+        pageDom.innerHTML = pageHtml;
+    }
+
+    function changePage(page) {
+        currentPage = page;
+        runSearch();
+    }
+
+    // 实体聚类
+    async function runCluster() {
+        const clusterDom = document.getElementById("clusterResult");
+        clusterDom.innerHTML = `<div class="loading">聚类分析中...</div>`;
+        try {
+            const res = await fetch(`${API_BASE}/cluster`);
+            const json = await res.json();
+            if (json.code !== 200) {
+                clusterDom.innerHTML = `<div class="result-item"><div class="q">聚类失败：${json.error}</div></div>`;
+                return;
+            }
+            clusterData = json.data;
+
+            let html = "";
+            const colors = ["#667eea", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"];
+            let colorIdx = 0;
+            for (const [name, entities] of Object.entries(clusterData)) {
+                html += `
+                    <div class="cluster-card" style="border-left-color:${colors[colorIdx]}">
+                        <h4>${name}（${entities.length.toLocaleString()} 个实体）</h4>
+                        <p>${entities.slice(0, 10).join("、")}${entities.length > 10 ? "..." : ""}</p>
+                    </div>
+                `;
+                colorIdx++;
+            }
+            clusterDom.innerHTML = html;
+            return clusterData;
+        } catch (err) {
+            clusterDom.innerHTML = `<div class="result-item"><div class="q">聚类失败，请检查后端服务</div></div>`;
+        }
+    }
+
+    // 知识图谱渲染（优化布局，解决空白）
+    function initGraphChart() {
+        const chartDom = document.getElementById("graphChart");
+        if (!chartDom) return;
+
+        // 销毁旧实例，避免叠加渲染
+        if (graphChartInstance) {
+            graphChartInstance.dispose();
+        }
+        // 空数据判断
+        if (graphData.nodes.length === 0) {
+            chartDom.innerHTML = "<div style='text-align:center;padding:30px;color:#999;'>暂无图谱数据</div>";
+            return;
+        }
+
+        graphChartInstance = echarts.init(chartDom);
+        const option = {
+            tooltip: { trigger: "item", formatter: "{b}" },
+            series: [{
+                type: "graph",
+                layout: "force",
+                force: { repulsion: 180, edgeLength: 70, gravity: 0.12 },
+                roam: true,
+                label: { show: true, fontSize: 10 },
+                lineStyle: { width: 0.6, color: "source" },
+                data: graphData.nodes,
+                links: graphData.edges
+            }]
+        };
+        graphChartInstance.setOption(option);
+        // 窗口自适应
+        window.addEventListener("resize", () => graphChartInstance.resize());
+    }
+
+    // 统计图表渲染（修复溢出、尺寸过大问题）
+    function drawStatsCharts() {
+        if (typeof Chart === 'undefined') return;
+
+        // 销毁旧图表
+        Object.values(chartInstances).forEach(chart => {
+            if (chart && typeof chart.destroy === 'function') chart.destroy();
+        });
+        chartInstances = {};
+
+        if (Object.keys(clusterData).length === 0) {
+            runCluster().then(() => drawStatsCharts());
+            return;
+        }
+
+        const clusterNames = Object.keys(clusterData);
+        const clusterCounts = Object.values(clusterData).map(v => v.length);
+        const colors = ["#667eea", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"];
+
+        // 饼图：领域分布
+        const fieldCtx = document.getElementById("chartField").getContext("2d");
+        chartInstances.field = new Chart(fieldCtx, {
+            type: "doughnut",
+            data: { labels: clusterNames, datasets: [{ data: clusterCounts, backgroundColor: colors }] },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: { legend: { position: "bottom" } }
+            }
+        });
+
+        // 柱状图：聚类数量（限制坐标轴，防止溢出）
+        const clusterCtx = document.getElementById("chartClusterNum").getContext("2d");
+        chartInstances.cluster = new Chart(clusterCtx, {
+            type: "bar",
+            data: { labels: clusterNames, datasets: [{ label: "实体数量", data: clusterCounts, backgroundColor: colors }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, max: Math.max(...clusterCounts) * 1.1 }
+                }
+            }
+        });
+
+        // 多跳链路长度分布
+        const linkLenCtx = document.getElementById("chartLinkLen").getContext("2d");
+        const linkLenCount = [0, 0, 0, 0, 0];
+        graphData.nodes.forEach(node => {
+            let len = 1;
+            graphData.edges.forEach(edge => { if (edge.source === node.name) len++; });
+            if (len <= 5) linkLenCount[len - 1]++;
+        });
+        chartInstances.linkLen = new Chart(linkLenCtx, {
+            type: "bar",
+            data: { labels: ["1跳", "2跳", "3跳", "4跳", "5跳"], datasets: [{ label: "实体数量", data: linkLenCount, backgroundColor: "#667eea" }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+
+    // HTML转义
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // 页面加载初始化
+    window.onload = function() {
+        initPage();
+    };
+</script>
+</body>
+</html>
